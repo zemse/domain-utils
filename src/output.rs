@@ -6,8 +6,11 @@ use std::sync::OnceLock;
 
 use crate::backend::{Availability, BACKENDS, DomainInfo};
 use crate::dns::DnsRecord;
+use crate::dnssec::DnssecInfo;
 use crate::email::EmailInfo;
+use crate::http::HttpInfo;
 use crate::pricing::TldPrice;
+use crate::propagation::Propagation;
 use crate::tls::TlsInfo;
 
 fn color_enabled() -> bool {
@@ -305,6 +308,97 @@ pub fn print_prices(results: &[(String, Option<TldPrice>)]) {
             None => println!("  .{:<14} {}", tld, dim("not offered by Porkbun")),
         }
     }
+}
+
+/// Reverse-DNS (PTR) names for one IP (`domain ptr`).
+pub fn print_ptr(ip: &str, names: &[String]) {
+    if names.is_empty() {
+        println!("{}  {}", bold(ip), dim("(no PTR record)"));
+    } else {
+        println!("{}  {}", bold(ip), green(&names.join(", ")));
+    }
+}
+
+/// DNSSEC status for one domain (`domain dnssec`).
+pub fn print_dnssec(info: &DnssecInfo) {
+    let status = if info.signed {
+        if info.validated {
+            green("signed & validated")
+        } else {
+            yellow("signed (not validated by resolver)")
+        }
+    } else {
+        dim("unsigned (no DS at parent)")
+    };
+    println!("{}  {}", bold(&info.domain), status);
+    field("DS records", &info.ds.len().to_string());
+    for ds in &info.ds {
+        println!("           {}", dim(&ds.value));
+    }
+    field("DNSKEY", &info.dnskey_count.to_string());
+    field("AD bit", if info.validated { "set" } else { "unset" });
+    println!();
+}
+
+/// HTTP redirect chain + security headers for one target (`domain http`).
+pub fn print_http(info: &HttpInfo) {
+    println!("{}", bold(&info.url));
+    for hop in &info.hops {
+        let code = status_color(hop.status);
+        match &hop.location {
+            Some(loc) => println!("  {} {}  {} {}", code, hop.url, dim("→"), dim(loc)),
+            None => println!("  {} {}", code, hop.url),
+        }
+    }
+    if info.hops.len() > 1 {
+        field(
+            "final",
+            &format!("{} {}", status_color(info.final_status), info.final_url),
+        );
+    }
+    match &info.hsts {
+        Some(v) => field("HSTS", &green(v)),
+        None => field("HSTS", &red("not set")),
+    }
+    if let Some(s) = &info.server {
+        field("server", s);
+    }
+    println!();
+}
+
+/// Color an HTTP status code: green 2xx, yellow 3xx, red otherwise.
+fn status_color(status: u16) -> String {
+    let s = status.to_string();
+    match status / 100 {
+        2 => green(&s),
+        3 => yellow(&s),
+        _ => red(&s),
+    }
+}
+
+/// Propagation diff across resolvers for one domain (`domain propagation`).
+pub fn print_propagation(info: &Propagation) {
+    let verdict = if info.consistent {
+        green("consistent")
+    } else {
+        yellow("DIVERGENT")
+    };
+    println!(
+        "{} {}  {}",
+        bold(&info.domain),
+        dim(&format!("({})", info.record_type)),
+        verdict
+    );
+    for r in &info.resolvers {
+        match &r.error {
+            Some(e) => println!("  {:<12} {}", dim(&r.resolver), red(&format!("error: {e}"))),
+            None if r.values.is_empty() => {
+                println!("  {:<12} {}", bold(&r.resolver), dim("(none)"))
+            }
+            None => println!("  {:<12} {}", bold(&r.resolver), r.values.join(", ")),
+        }
+    }
+    println!();
 }
 
 /// Running tally of a batch run, printed as a summary line at the end.

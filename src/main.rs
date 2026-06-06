@@ -1,24 +1,31 @@
 mod backend;
 mod cli;
+mod date;
 mod dns;
+mod dnssec;
 mod email;
+mod http;
 mod output;
 mod pricing;
+mod propagation;
 mod tlds;
 mod tls;
 
 use std::collections::HashSet;
 use std::io::{IsTerminal, Read};
+use std::net::IpAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::backend::{Backend, DomainInfo};
-use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs, PriceArgs, TlsArgs};
+use crate::cli::{
+    BatchInput, Cli, Command, DnsArgs, LookupArgs, PriceArgs, PropagationArgs, TlsArgs,
+};
 use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 use crate::email::EmailInfo;
 use crate::pricing::{PriceClient, TldPrice};
@@ -65,7 +72,17 @@ async fn run(command: Command, json: bool) -> Result<ExitCode> {
         }
         Command::Email(input) => run_email(input, json).await,
         Command::Tls(args) => run_tls(args, json).await,
+        Command::Ptr(input) => run_ptr(input, json).await,
+        Command::Dnssec(input) => run_dnssec(input, json).await,
+        Command::Http(input) => run_http(input, json).await,
+        Command::Propagation(args) => run_propagation(args, json).await,
         Command::Price(args) => run_price(args, json).await,
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
 
@@ -97,8 +114,24 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
         prices.get(tld_label(domain))
     };
 
-    let results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
+    let mut results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
     let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    // `whois --expiring-within 30d`: keep only domains whose expiry parses and
+    // falls within the window, sorted soonest-first. Errors are dropped from the
+    // view but still counted toward the exit code above.
+    if let (Mode::Whois, Some(window)) = (mode, args.expiring_within.as_deref()) {
+        let max_days = date::parse_duration_days(window)?;
+        let days_of = |r: &Result<DomainInfo>| -> Option<i64> {
+            r.as_ref()
+                .ok()?
+                .expires
+                .as_deref()
+                .and_then(date::days_until)
+        };
+        results.retain(|(_, r)| days_of(r).map(|d| d <= max_days).unwrap_or(false));
+        results.sort_by_key(|(_, r)| days_of(r).unwrap_or(i64::MAX));
+    }
 
     if json {
         let arr: Vec<Value> = results
@@ -386,6 +419,175 @@ async fn tls_all(
         .map(|(i, slot)| {
             slot.unwrap_or_else(|| (domains[i].clone(), Err(anyhow!("tls task failed"))))
         })
+        .collect()
+}
+
+async fn run_ptr(input: BatchInput, json: bool) -> Result<ExitCode> {
+    let concurrency = input.concurrency;
+    let ips = gather_domains(&input)?;
+    let client = Arc::new(DnsClient::new());
+    let results = run_concurrent(&ips, concurrency, move |raw| {
+        let client = Arc::clone(&client);
+        async move {
+            let ip: IpAddr = raw
+                .trim()
+                .parse()
+                .with_context(|| format!("`{raw}` is not a valid IP address"))?;
+            let recs = client.lookup(&dns::reverse_name(ip), "PTR").await?;
+            Ok::<Vec<String>, anyhow::Error>(recs.into_iter().map(|r| r.value).collect())
+        }
+    })
+    .await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(ip, r)| match r {
+                Ok(names) => json!({ "ip": ip, "ptr": names }),
+                Err(e) => json!({ "ip": ip, "error": format!("{e:#}") }),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        for (ip, r) in &results {
+            match r {
+                Ok(names) => output::print_ptr(ip, names),
+                Err(e) => output::print_lookup_error(ip, "ptr", e),
+            }
+        }
+    }
+    Ok(exit_code(errors))
+}
+
+async fn run_dnssec(input: BatchInput, json: bool) -> Result<ExitCode> {
+    let concurrency = input.concurrency;
+    let domains = gather_domains(&input)?;
+    let client = Arc::new(DnsClient::new());
+    let results = run_concurrent(&domains, concurrency, move |domain| {
+        let client = Arc::clone(&client);
+        async move { dnssec::inspect(&client, &domain).await }
+    })
+    .await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&to_json(&results, "domain"))?
+        );
+    } else {
+        for (domain, r) in &results {
+            match r {
+                Ok(info) => output::print_dnssec(info),
+                Err(e) => output::print_lookup_error(domain, "dnssec", e),
+            }
+        }
+    }
+    Ok(exit_code(errors))
+}
+
+async fn run_http(input: BatchInput, json: bool) -> Result<ExitCode> {
+    let concurrency = input.concurrency;
+    let targets = gather_domains(&input)?;
+    let results = run_concurrent(&targets, concurrency, |target| async move {
+        http::inspect(&target).await
+    })
+    .await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&to_json(&results, "url"))?
+        );
+    } else {
+        for (target, r) in &results {
+            match r {
+                Ok(info) => output::print_http(info),
+                Err(e) => output::print_lookup_error(target, "http", e),
+            }
+        }
+    }
+    Ok(exit_code(errors))
+}
+
+async fn run_propagation(args: PropagationArgs, json: bool) -> Result<ExitCode> {
+    let concurrency = args.input.concurrency;
+    let domains = gather_domains(&args.input)?;
+    let rtype = args.record_type.to_ascii_uppercase();
+    let client = Arc::new(DnsClient::new());
+    let results = run_concurrent(&domains, concurrency, move |domain| {
+        let client = Arc::clone(&client);
+        let rtype = rtype.clone();
+        async move { propagation::check(&client, &domain, &rtype).await }
+    })
+    .await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&to_json(&results, "domain"))?
+        );
+    } else {
+        for (domain, r) in &results {
+            match r {
+                Ok(info) => output::print_propagation(info),
+                Err(e) => output::print_lookup_error(domain, "propagation", e),
+            }
+        }
+    }
+    Ok(exit_code(errors))
+}
+
+/// Serialize a batch of `(key, Result<T>)` into a JSON array, using `key_field`
+/// (e.g. `"domain"`) as the identifying field on error entries.
+fn to_json<T: serde::Serialize>(results: &[(String, Result<T>)], key_field: &str) -> Vec<Value> {
+    results
+        .iter()
+        .map(|(key, r)| match r {
+            Ok(info) => serde_json::to_value(info)
+                .unwrap_or_else(|_| json!({ key_field: key, "error": "serialize failed" })),
+            Err(e) => json!({ key_field: key, "error": format!("{e:#}") }),
+        })
+        .collect()
+}
+
+/// Run `f` over every item concurrently (bounded by `concurrency`), returning
+/// `(item, result)` pairs in the original input order.
+async fn run_concurrent<T, F, Fut>(
+    items: &[String],
+    concurrency: usize,
+    f: F,
+) -> Vec<(String, Result<T>)>
+where
+    F: Fn(String) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = Result<T>> + Send,
+    T: Send + 'static,
+{
+    let sem = Arc::new(Semaphore::new(concurrency.max(1)));
+    let mut set = tokio::task::JoinSet::new();
+    for (index, item) in items.iter().cloned().enumerate() {
+        let sem = Arc::clone(&sem);
+        let f = f.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("semaphore is not closed");
+            let result = f(item.clone()).await;
+            (index, item, result)
+        });
+    }
+
+    let mut slots: Vec<Option<(String, Result<T>)>> = (0..items.len()).map(|_| None).collect();
+    while let Some(joined) = set.join_next().await {
+        if let Ok((index, item, result)) = joined {
+            slots[index] = Some((item, result));
+        }
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| slot.unwrap_or_else(|| (items[i].clone(), Err(anyhow!("task failed")))))
         .collect()
 }
 

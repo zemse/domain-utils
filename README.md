@@ -2,8 +2,9 @@
 
 A small, fast CLI toolkit for domains: **check availability**, look up
 **WHOIS / RDAP registration data**, see **registration pricing**, and inspect
-**DNS records**, **email-security records**, and **TLS certificates** — across
-multiple backends, keyless by default.
+**DNS records**, **email-security records**, **TLS certificates**, **DNSSEC**,
+**reverse DNS**, **HTTP/redirect/HSTS**, and **DNS propagation** across public
+resolvers — across multiple backends, keyless by default.
 
 The default backend, **`auto`**, is **keyless** — no signup, no API key. It uses
 RDAP where a TLD supports it and falls back to port-43 WHOIS otherwise, so it
@@ -39,8 +40,22 @@ domain ns example.com                     # nameservers (shortcut for `dns -t NS
 # Pick a backend explicitly
 domain check example.com --backend whois
 
+# DNS health
+domain dnssec example.com                  # DNSSEC status (DS / DNSKEY / AD bit)
+domain ptr 8.8.8.8 1.1.1.1                 # reverse DNS (PTR) for IPs
+domain propagation example.com -t A        # compare a record across resolvers
+
+# HTTP reachability: redirect chain, final status, HSTS header
+domain http example.com
+
+# Expiry watch: only domains expiring within a window, soonest first
+domain whois --file portfolio.txt --expiring-within 30d
+
 # List backends and whether each needs an API key
 domain backends
+
+# Shell completions (bash, zsh, fish, powershell, elvish)
+domain completions zsh > ~/.zfunc/_domain
 ```
 
 ### Multi-TLD checks & categories
@@ -114,6 +129,77 @@ github.com:443
   not after:    Aug  2 23:59:59 2026 +00:00
   expiry:       57 days left
   SANs:         github.com, www.github.com
+```
+
+### DNSSEC, reverse DNS & propagation
+
+`domain dnssec <domain>` reports whether the parent zone publishes `DS` records
+(a secure delegation), how many `DNSKEY` records the zone serves, and whether the
+resolver set the `AD` (Authenticated Data) bit — i.e. it DNSSEC-validated the
+answer.
+
+```text
+$ domain dnssec cloudflare.com
+cloudflare.com  signed & validated
+  DS records:   1
+           2371 13 2 32996839A6D808AFE3EB4A...
+  DNSKEY:       2
+  AD bit:       set
+```
+
+`domain ptr <ip>...` does a reverse-DNS (PTR) lookup for one or more IPv4/IPv6
+addresses. `domain propagation <domain>` queries the same record (default `A`,
+override with `-t`) on several public resolvers (Google, Cloudflare, AdGuard,
+dns.sb) and flags whether they agree — useful right after a DNS change.
+
+```text
+$ domain ptr 8.8.8.8
+8.8.8.8  dns.google.
+
+$ domain propagation example.com -t A
+example.com (A)  consistent
+  google       104.20.23.154, 172.66.147.243
+  cloudflare   104.20.23.154, 172.66.147.243
+  adguard      104.20.23.154, 172.66.147.243
+  dns.sb       104.20.23.154, 172.66.147.243
+```
+
+(Quad9 and OpenDNS are omitted from propagation: their public DoH endpoints
+serve wire-format only, with no JSON variant.)
+
+### HTTP / redirects / HSTS
+
+`domain http <url|domain>` traces the redirect chain hop by hop and reports the
+final status plus the `Strict-Transport-Security` (HSTS) and `Server` headers. A
+bare host defaults to `https://`.
+
+```text
+$ domain http github.com
+https://github.com/
+  200 https://github.com/
+  HSTS:         max-age=31536000; includeSubdomains; preload
+  server:       github.com
+```
+
+### Expiry watch
+
+Add `--expiring-within <DURATION>` to `whois` to keep only domains whose
+expiry falls within a window, sorted soonest-first — pair it with `tls`'s
+days-to-expiry to watch renewals. Durations accept a bare number (days) or a
+`d`/`w`/`m`/`y` suffix (e.g. `30`, `30d`, `6w`, `3m`, `1y`).
+
+```sh
+domain whois --file portfolio.txt --expiring-within 30d
+```
+
+### Shell completions
+
+`domain completions <shell>` writes a completion script to stdout for `bash`,
+`zsh`, `fish`, `powershell`, or `elvish`.
+
+```sh
+domain completions zsh > ~/.zfunc/_domain     # then ensure ~/.zfunc is on $fpath
+domain completions bash > /etc/bash_completion.d/domain
 ```
 
 ### JSON output
