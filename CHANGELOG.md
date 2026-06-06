@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Default lookup: `domain <name>` (no subcommand) checks availability and, for
+  any name that's registered, also prints its full WHOIS/registration record.
+  Accepts the same options and batch input as `check`.
 - `check` — domain availability across all TLDs via the keyless `auto` backend
   (RDAP → port-43 WHOIS fallback).
 - `whois` — registration data: registrar, dates, nameservers, EPP status.

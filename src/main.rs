@@ -22,7 +22,7 @@ use clap::{CommandFactory, Parser};
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
-use crate::backend::{Backend, DomainInfo};
+use crate::backend::{Availability, Backend, DomainInfo};
 use crate::cli::{
     BatchInput, Cli, Command, DnsArgs, LookupArgs, PriceArgs, PropagationArgs, TlsArgs,
 };
@@ -35,7 +35,12 @@ use crate::tls::TlsInfo;
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let json = cli.json;
-    match run(cli.command, json).await {
+    let result = match cli.command {
+        Some(command) => run(command, json).await,
+        // No subcommand: `domain <name>` — availability + WHOIS-if-registered.
+        None => run_default(cli.default, json).await,
+    };
+    match result {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e:#}");
@@ -44,10 +49,27 @@ async fn main() -> ExitCode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Check,
     Whois,
+    /// Default `domain <name>`: availability, plus WHOIS for registered names.
+    Lookup,
+}
+
+/// The default action when no subcommand is given.
+async fn run_default(args: LookupArgs, json: bool) -> Result<ExitCode> {
+    // Bare `domain` on a terminal with no input: show help instead of erroring.
+    if !json
+        && args.input.domains.is_empty()
+        && args.input.file.is_none()
+        && std::io::stdin().is_terminal()
+    {
+        Cli::command().print_help().ok();
+        println!();
+        return Ok(ExitCode::SUCCESS);
+    }
+    run_lookups(args, Mode::Lookup, json).await
 }
 
 async fn run(command: Command, json: bool) -> Result<ExitCode> {
@@ -159,13 +181,18 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
         for (domain, result) in &results {
             match result {
                 Ok(info) => {
+                    let price =
+                        || price_of(&info.domain).map(|p| format!("${}/yr", p.registration));
                     match mode {
-                        Mode::Check => {
-                            let price =
-                                price_of(&info.domain).map(|p| format!("${}/yr", p.registration));
-                            output::print_check(info, price.as_deref());
-                        }
+                        Mode::Check => output::print_check(info, price().as_deref()),
                         Mode::Whois => output::print_whois(info),
+                        Mode::Lookup => {
+                            output::print_check(info, price().as_deref());
+                            // Not available → also print the full WHOIS record.
+                            if info.availability != Availability::Available {
+                                output::print_whois(info);
+                            }
+                        }
                     }
                     summary.record_ok(info.availability);
                 }

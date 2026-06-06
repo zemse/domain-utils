@@ -5,13 +5,23 @@ use clap_complete::Shell;
 
 /// Domain toolkit: availability, WHOIS/RDAP registration data, and DNS records.
 ///
+/// Run `domain <name>` for a quick lookup — it checks availability and, for any
+/// name that's registered, also prints its full WHOIS/registration record. Or
+/// use a subcommand for WHOIS-only, DNS, email, TLS, pricing, and more.
+///
 /// Availability/WHOIS use the keyless `auto` backend (RDAP→WHOIS) by default;
 /// pick another with `--backend`. DNS lookups use DNS-over-HTTPS (keyless).
 #[derive(Parser, Debug)]
 #[command(name = "domain", version, about, long_about = None)]
+#[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
+
+    /// Domain(s) to look up when no subcommand is given (availability, plus
+    /// WHOIS for any that are registered). Accepts the same options as `check`.
+    #[command(flatten)]
+    pub default: LookupArgs,
 
     /// Emit machine-readable JSON instead of the human-friendly output.
     #[arg(long, global = true)]
