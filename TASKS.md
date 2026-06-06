@@ -32,6 +32,10 @@ on `main`; pending items are enhancements, not part of the original brief.
 - [x] Publish to crates.io (`cargo install domain-utils`)
 
 ### Pricing
+- [ ] Default lookup `domain <name>` does not show the registration price when a
+      domain is available — it should. (`check --price` shows it, but the bare
+      `domain <name>` / default path omits it.) Show the cost next to available
+      names in the default lookup, matching `check --price`.
 - [ ] Multi-registrar pricing — currently Porkbun-only (indicative). Add keyed
       backends (GoDaddy, Gandi, Name.com, AWS Route 53) per `RESEARCH.md`
 - [ ] Show cheapest across sources / price comparison

@@ -1,5 +1,9 @@
 # domain-utils
 
+[![crates.io](https://img.shields.io/crates/v/domain-utils.svg)](https://crates.io/crates/domain-utils)
+[![CI](https://github.com/zemse/domain-utils/actions/workflows/ci.yml/badge.svg)](https://github.com/zemse/domain-utils/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A small, fast CLI toolkit for domains: **check availability**, look up
 **WHOIS / RDAP registration data**, see **registration pricing**, and inspect
 **DNS records**, **email-security records**, **TLS certificates**, **DNSSEC**,
