@@ -4,6 +4,7 @@ mod dns;
 mod email;
 mod output;
 mod tlds;
+mod tls;
 
 use std::collections::HashSet;
 use std::io::{IsTerminal, Read};
@@ -16,9 +17,10 @@ use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::backend::{Backend, DomainInfo};
-use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs};
+use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs, TlsArgs};
 use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 use crate::email::EmailInfo;
+use crate::tls::TlsInfo;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -60,6 +62,7 @@ async fn run(command: Command, json: bool) -> Result<ExitCode> {
             .await
         }
         Command::Email(input) => run_email(input, json).await,
+        Command::Tls(args) => run_tls(args, json).await,
     }
 }
 
@@ -222,6 +225,66 @@ async fn email_all(
         .enumerate()
         .map(|(i, slot)| {
             slot.unwrap_or_else(|| (domains[i].clone(), Err(anyhow!("email task failed"))))
+        })
+        .collect()
+}
+
+async fn run_tls(args: TlsArgs, json: bool) -> Result<ExitCode> {
+    let domains = gather_domains(&args.input)?;
+    let results = tls_all(&domains, args.port, args.input.concurrency).await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(domain, result)| match result {
+                Ok(info) => serde_json::to_value(info)
+                    .unwrap_or_else(|_| json!({ "domain": domain, "error": "serialize failed" })),
+                Err(e) => json!({ "domain": domain, "error": format!("{e:#}") }),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        for (domain, result) in &results {
+            match result {
+                Ok(info) => output::print_tls(info),
+                Err(e) => output::print_lookup_error(domain, "tls", e),
+            }
+        }
+    }
+
+    Ok(exit_code(errors))
+}
+
+/// Inspect every domain's TLS certificate concurrently, in input order.
+async fn tls_all(
+    domains: &[String],
+    port: u16,
+    concurrency: usize,
+) -> Vec<(String, Result<TlsInfo>)> {
+    let sem = Arc::new(Semaphore::new(concurrency.max(1)));
+    let mut set = tokio::task::JoinSet::new();
+    for (index, domain) in domains.iter().cloned().enumerate() {
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("semaphore is not closed");
+            let result = tls::inspect(&domain, port).await;
+            (index, domain, result)
+        });
+    }
+
+    let mut slots: Vec<Option<(String, Result<TlsInfo>)>> =
+        (0..domains.len()).map(|_| None).collect();
+    while let Some(joined) = set.join_next().await {
+        if let Ok((index, domain, result)) = joined {
+            slots[index] = Some((domain, result));
+        }
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            slot.unwrap_or_else(|| (domains[i].clone(), Err(anyhow!("tls task failed"))))
         })
         .collect()
 }

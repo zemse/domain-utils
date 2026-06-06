@@ -73,6 +73,23 @@ github.com
   ✓ DKIM    selectors: google, k1, s1, selector1
 ```
 
+### TLS certificate
+
+`domain tls <domain>` opens a TLS connection and shows the leaf certificate:
+subject, issuer, validity window, days-to-expiry (highlighted when expiring
+soon or expired), and SANs. Trust is intentionally not verified, so expired or
+self-signed certs are still inspected and flagged. Use `--port` for non-443.
+
+```text
+$ domain tls github.com
+github.com:443
+  subject:      github.com
+  issuer:       Sectigo Public Server Authentication CA DV E36
+  not after:    Aug  2 23:59:59 2026 +00:00
+  expiry:       57 days left
+  SANs:         github.com, www.github.com
+```
+
 ### JSON output
 
 Add `--json` to any command for machine-readable output (a JSON array), e.g.

@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use crate::backend::{Availability, BACKENDS, DomainInfo};
 use crate::dns::DnsRecord;
 use crate::email::EmailInfo;
+use crate::tls::TlsInfo;
 
 fn color_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -243,6 +244,46 @@ pub fn print_email(info: &EmailInfo) {
 /// Pad a short record-type label to a fixed width (color-safe — no color here).
 fn pad(label: &str) -> String {
     format!("{label:<6}")
+}
+
+/// TLS certificate summary for one domain (`domain tls`).
+pub fn print_tls(info: &TlsInfo) {
+    println!("{}", bold(&format!("{}:{}", info.domain, info.port)));
+    if let Some(s) = &info.subject {
+        field("subject", s);
+    }
+    if let Some(i) = &info.issuer {
+        field("issuer", i);
+    }
+    field("not before", &info.not_before);
+    field("not after", &info.not_after);
+
+    // Highlight the expiry: red if expired, yellow if within 30 days.
+    let expiry = if info.expired {
+        red("EXPIRED")
+    } else if info.days_to_expiry <= 30 {
+        yellow(&format!("{} days left", info.days_to_expiry))
+    } else {
+        green(&format!("{} days left", info.days_to_expiry))
+    };
+    field("expiry", &expiry);
+
+    if !info.san.is_empty() {
+        // Cap the SAN list so a wildcard cert with hundreds of names stays readable.
+        let shown = 8;
+        let mut sans = info
+            .san
+            .iter()
+            .take(shown)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        if info.san.len() > shown {
+            sans.push_str(&dim(&format!(" (+{} more)", info.san.len() - shown)));
+        }
+        field("SANs", &sans);
+    }
+    println!();
 }
 
 /// Running tally of a batch run, printed as a summary line at the end.

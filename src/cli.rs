@@ -34,6 +34,9 @@ pub enum Command {
     /// Inspect email-security records: MX, SPF, DMARC, DKIM.
     Email(BatchInput),
 
+    /// Inspect a domain's live TLS certificate (issuer, SANs, expiry).
+    Tls(TlsArgs),
+
     /// List TLD categories, or the TLDs within one. Use `all` for every TLD.
     Tlds {
         /// Category name (e.g. `finance`). Omit to list all categories.
@@ -95,6 +98,17 @@ pub struct LookupArgs {
     /// Spray across every known TLD (~1400). Slow and prone to rate limits.
     #[arg(long)]
     pub all_tlds: bool,
+}
+
+/// Arguments for `tls`.
+#[derive(Args, Debug)]
+pub struct TlsArgs {
+    #[command(flatten)]
+    pub input: BatchInput,
+
+    /// Port to connect to for the TLS handshake.
+    #[arg(short, long, default_value_t = 443, value_name = "PORT")]
+    pub port: u16,
 }
 
 /// Arguments for `dns`.
