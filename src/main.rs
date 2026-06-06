@@ -28,7 +28,7 @@ use crate::cli::{
 };
 use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 use crate::email::EmailInfo;
-use crate::pricing::{PriceClient, TldPrice};
+use crate::pricing::{PROVIDER, PriceClient, TldPrice};
 use crate::tls::TlsInfo;
 
 #[tokio::main]
@@ -119,12 +119,19 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
     let backend_name = backend.name();
     let domains = expand_tlds(gather_domains(&args.input)?, &args)?;
 
-    // The default `domain <name>` lookup shows price for available names
-    // automatically; `check`/`whois` only fetch pricing when asked with --price.
-    let want_prices = args.price || mode == Mode::Lookup;
+    // Pricing is opt-in via --pricing (Porkbun's keyless pricing endpoint is
+    // slow, ~15s); it's off by default for every mode, including the default
+    // `domain <name>` lookup.
+    let want_prices = args.pricing;
 
-    // Pricing is best-effort: a fetch failure shouldn't fail the availability run.
-    let prices = if want_prices {
+    // Fetch pricing (the full Porkbun table) concurrently with the availability
+    // lookups rather than before them — otherwise the pricing download adds its
+    // full latency on top of every run. Pricing is best-effort: a fetch failure
+    // shouldn't fail the availability run.
+    let prices_fut = async {
+        if !want_prices {
+            return None;
+        }
         match PriceClient::new().fetch_all().await {
             Ok(map) => Some(map),
             Err(e) => {
@@ -132,15 +139,15 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
                 None
             }
         }
-    } else {
-        None
     };
+    let lookups_fut = lookup_all(Arc::new(backend), &domains, args.input.concurrency);
+    let (prices, mut results) = tokio::join!(prices_fut, lookups_fut);
+
     let price_of = |domain: &str| -> Option<&TldPrice> {
         let prices = prices.as_ref()?;
         prices.get(tld_label(domain))
     };
 
-    let mut results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
     let errors = results.iter().filter(|(_, r)| r.is_err()).count();
 
     // `whois --expiring-within 30d`: keep only domains whose expiry parses and
@@ -171,7 +178,7 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
                             "registration": p.registration,
                             "renewal": p.renewal,
                             "transfer": p.transfer,
-                            "source": "porkbun",
+                            "source": PROVIDER,
                         });
                     }
                     v
@@ -185,8 +192,10 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
         for (domain, result) in &results {
             match result {
                 Ok(info) => {
-                    let price =
-                        || price_of(&info.domain).map(|p| format!("${}/yr", p.registration));
+                    let price = || {
+                        price_of(&info.domain)
+                            .map(|p| format!("${}/yr ({PROVIDER})", p.registration))
+                    };
                     match mode {
                         Mode::Check => output::print_check(info, price().as_deref()),
                         Mode::Whois => output::print_whois(info),
@@ -266,7 +275,7 @@ async fn run_price(args: PriceArgs, json: bool) -> Result<ExitCode> {
                     "registration": p.registration,
                     "renewal": p.renewal,
                     "transfer": p.transfer,
-                    "source": "porkbun",
+                    "source": PROVIDER,
                 }),
                 None => json!({ "tld": tld, "offered": false }),
             })

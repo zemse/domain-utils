@@ -35,9 +35,11 @@ on `main`; pending items are enhancements, not part of the original brief.
       cut yet (deferred). Run the `release` flow when ready.
 
 ### Pricing
-- [x] Default lookup `domain <name>` now shows the registration price next to
-      any available name automatically (was `check --price`-only). Shipped in
-      v0.1.1.
+- [x] Pricing is opt-in via `--pricing` (alias `--price`), off by default for
+      every mode — Porkbun's keyless endpoint is slow (~15s, full-table only).
+      When requested it's fetched concurrently with availability and cached on
+      disk for 24h (platform cache dir; timestamp stored in-file). Price display
+      shows the provider, e.g. `$10.81/yr (porkbun)`. (For v0.1.1.)
 - [ ] Multi-registrar pricing — currently Porkbun-only (indicative). Add keyed
       backends (GoDaddy, Gandi, Name.com, AWS Route 53) per `RESEARCH.md`
       — **blocked: needs registrar API credentials** (and GoDaddy gates on 50+

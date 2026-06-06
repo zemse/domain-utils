@@ -25,11 +25,12 @@ cargo install domain-utils   # or: cargo install --path .
 ## Usage
 
 ```sh
-# Quick lookup (no subcommand): checks availability, shows the registration
-# price for any available name, and for any registered name also prints its
-# full WHOIS/registration record.
+# Quick lookup (no subcommand): checks availability, and for any registered
+# name also prints its full WHOIS/registration record. Add --pricing to also
+# show the registration price for available names.
 domain example.com
 domain example.com getme.dev acme.io
+domain example.com --pricing
 
 # Check availability only (default backend: auto = RDAP→WHOIS, keyless)
 domain check example.com
@@ -38,8 +39,8 @@ domain check example.com getme.dev acme.io
 # WHOIS / registration data
 domain whois example.com
 
-# Availability + price together
-domain check mystartup --category popular --price
+# Availability + price together (--pricing is opt-in; the pricing endpoint is slow)
+domain check mystartup --category popular --pricing
 domain price com io dev ai          # registration pricing for TLDs
 
 # DNS records (A, AAAA, MX, NS, TXT by default)
@@ -108,8 +109,15 @@ github.com
 `domain price <tld|domain>...` shows registration / renewal / transfer prices
 via Porkbun's public, keyless pricing endpoint (USD; these are Porkbun's retail
 prices — indicative, not a market minimum). Works by TLD, by `--category`, or
-`--all`. Add `--price` to `check` to show the registration price next to each
-available domain.
+`--all`. Add `--pricing` to `check` (or any lookup) to show the registration
+price next to each available domain.
+
+Pricing is **opt-in** because Porkbun's keyless endpoint is slow (~15s) and has
+no per-TLD variant — it only serves the full ~900-TLD table. To keep that cost
+off the common path, the table is fetched only with `--pricing`, downloaded
+concurrently with the availability lookups, and cached on disk for 24h
+(`~/Library/Caches/domain-utils/` on macOS, `$XDG_CACHE_HOME`/`~/.cache/`
+elsewhere) — so the first priced run is slow but subsequent ones are instant.
 
 ```text
 $ domain price io dev ai
@@ -118,9 +126,9 @@ Porkbun pricing (USD/yr):
   .dev            reg $10.81  renew $12.87  transfer $12.87
   .ai             reg $82.70  renew $82.70  transfer $165.09
 
-$ domain check mystartup --category popular --price
-✓ mystartup.io  available  $28.12/yr
-✓ mystartup.dev  available  $10.81/yr
+$ domain check mystartup --category popular --pricing
+✓ mystartup.io  available  $28.12/yr (porkbun)
+✓ mystartup.dev  available  $10.81/yr (porkbun)
 ...
 ```
 
@@ -264,8 +272,8 @@ $ domain check example.com google.com freeme-zxqw12345.com
 ### Example
 
 ```text
-# Default lookup: availability + price for available names, plus WHOIS for
-# registered ones.
+# Default lookup: availability, plus WHOIS for registered names. (Add --pricing
+# to also show the price next to available names.)
 $ domain example.com freeme-zxqw12345.com
 ✗ example.com  registered  (RESERVED-Internet Assigned Numbers Authority)
 example.com
@@ -274,7 +282,7 @@ example.com
   expires:      2026-08-13T04:00:00Z
   source:       rdap
 
-✓ freeme-zxqw12345.com  available  $11.08/yr
+✓ freeme-zxqw12345.com  available
 — 1 available · 1 registered
 ```
 

@@ -132,9 +132,10 @@ pub struct LookupArgs {
     #[arg(long)]
     pub all_tlds: bool,
 
-    /// Also show registration price (Porkbun, keyless) next to available results.
-    #[arg(long)]
-    pub price: bool,
+    /// Fetch and show registration pricing (Porkbun, keyless) next to available
+    /// results. Off by default — the pricing endpoint is slow (~15s).
+    #[arg(long, alias = "price")]
+    pub pricing: bool,
 
     /// (whois only) Keep only domains expiring within this window, soonest first,
     /// e.g. `30d`, `6w`, `3m`, `1y` (a bare number means days).

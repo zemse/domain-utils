@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1] - 2026-06-07
 
+### Added
+- Pricing quotes now show the provider name, e.g. `$10.81/yr (porkbun)`, and the
+  JSON `source` field is derived from the same constant.
+- On-disk cache for the Porkbun pricing table (`~/Library/Caches/domain-utils/`
+  on macOS, `$XDG_CACHE_HOME`/`~/.cache/` elsewhere) with a 24h TTL stamped
+  inside the file. Porkbun's keyless pricing endpoint is slow (~15s) and has no
+  per-TLD variant, so the first `--pricing` run pays the latency once and later
+  runs read the local copy (~0.4s).
+
 ### Changed
-- The default `domain <name>` lookup now shows the registration price next to
-  any available name automatically (previously only `check --price` did). The
-  `check` / `whois` subcommands are unchanged — they still fetch pricing only
-  when `--price` is passed.
+- Pricing is now opt-in via `--pricing` (with `--price` as an alias) and is off
+  by default for every mode, including the default `domain <name>` lookup —
+  availability lookups stay fast and never block on the slow pricing endpoint.
+- When `--pricing` is set, the pricing table is fetched concurrently with the
+  availability lookups instead of before them.
 
 ## [0.1.0] - 2026-06-07
 
