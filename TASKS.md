@@ -30,6 +30,9 @@ on `main`; pending items are enhancements, not part of the original brief.
 - [x] Create GitHub remote and push `main` (github.com/zemse/domain-utils)
 - [x] Tag and cut `v0.1.0` (GitHub release with notes)
 - [x] Publish to crates.io (`cargo install domain-utils`)
+- [ ] Publish v0.1.1 — version bump + CHANGELOG/README are committed & pushed to
+      `main`, but the crates.io publish + `v0.1.1` tag + GitHub release are not
+      cut yet (deferred). Run the `release` flow when ready.
 
 ### Pricing
 - [x] Default lookup `domain <name>` now shows the registration price next to
