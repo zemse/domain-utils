@@ -134,3 +134,51 @@ pub fn print_lookup_error(domain: &str, backend: &str, err: &anyhow::Error) {
         dim(&format!("[{backend}] {err:#}"))
     );
 }
+
+/// Running tally of a batch run, printed as a summary line at the end.
+#[derive(Default)]
+pub struct Summary {
+    pub available: usize,
+    pub registered: usize,
+    pub unknown: usize,
+    pub errors: usize,
+}
+
+impl Summary {
+    pub fn record_ok(&mut self, availability: Availability) {
+        match availability {
+            Availability::Available => self.available += 1,
+            Availability::Registered => self.registered += 1,
+            Availability::Unknown => self.unknown += 1,
+        }
+    }
+
+    pub fn record_err(&mut self) {
+        self.errors += 1;
+    }
+}
+
+/// One-line tally for a multi-domain batch, e.g. `2 available · 3 registered · 1 error`.
+pub fn print_summary(s: &Summary) {
+    let mut parts = Vec::new();
+    if s.available > 0 {
+        parts.push(green(&format!("{} available", s.available)));
+    }
+    if s.registered > 0 {
+        parts.push(yellow(&format!("{} registered", s.registered)));
+    }
+    if s.unknown > 0 {
+        parts.push(dim(&format!("{} unknown", s.unknown)));
+    }
+    if s.errors > 0 {
+        parts.push(red(&format!("{} error{}", s.errors, plural(s.errors))));
+    }
+    if parts.is_empty() {
+        return;
+    }
+    println!("{} {}", dim("—"), parts.join(&dim(" · ")));
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
+}

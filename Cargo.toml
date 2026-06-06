@@ -1,11 +1,11 @@
 [package]
-name = "domain-cli"
+name = "domain-rs"
 version = "0.1.0"
 edition = "2024"
 description = "Check domain availability and WHOIS/registration data across multiple backends, keyless by default (RDAP)."
 authors = ["Soham Zemse <soham@zemse.in>"]
 license = "MIT"
-repository = "https://github.com/zemse/domain-cli"
+repository = "https://github.com/zemse/domain-rs"
 keywords = ["domain", "rdap", "whois", "availability", "cli"]
 categories = ["command-line-utilities"]
 # Whitelist what ships to crates.io (never blacklist).

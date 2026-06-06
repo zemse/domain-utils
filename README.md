@@ -1,4 +1,4 @@
-# domain-cli
+# domain-rs
 
 A small, fast CLI to **check domain availability** and look up **WHOIS / registration data** across multiple registrar backends.
 
@@ -7,13 +7,13 @@ IANA RDAP bootstrap registry to query each TLD's authoritative registry server
 directly. Additional backends (some requiring an API key) can be selected with
 `--backend`.
 
+The crate is published as **`domain-rs`**; it installs a binary named **`domain`**.
+
 ## Install
 
 ```sh
-cargo install --path .
+cargo install domain-rs   # or: cargo install --path .
 ```
-
-This builds a binary named **`domain`**.
 
 ## Usage
 
@@ -30,6 +30,34 @@ domain check example.com --backend rdap
 
 # List backends and whether each needs an API key
 domain backends
+```
+
+### Batch checks
+
+Domains can be passed as arguments, read from a file, and/or piped on stdin —
+they're merged, de-duplicated, and looked up concurrently. Results print in
+input order, followed by a summary line.
+
+```sh
+# Many domains at once
+domain check example.com google.com acme.io rust-lang.org
+
+# From a file (one per line, whitespace-separated; `#` starts a comment)
+domain check --file domains.txt
+
+# From stdin (no args, or `--file -`)
+cat domains.txt | domain check
+
+# Tune how many run concurrently (default: 10)
+domain check --file domains.txt --concurrency 20
+```
+
+```text
+$ domain check example.com google.com freeme-zxqw12345.com
+✗ example.com  registered  (RESERVED-Internet Assigned Numbers Authority)
+✗ google.com  registered  (MarkMonitor Inc.)
+✓ freeme-zxqw12345.com  available
+— 1 available · 2 registered
 ```
 
 ### Example

@@ -27,7 +27,11 @@ pub struct RdapBackend {
 impl RdapBackend {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .user_agent(concat!("domain-cli/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!(
+                env!("CARGO_PKG_NAME"),
+                "/",
+                env!("CARGO_PKG_VERSION")
+            ))
             .build()
             .expect("failed to build HTTP client");
         Self {

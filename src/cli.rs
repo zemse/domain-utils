@@ -1,4 +1,6 @@
-use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
 
 /// Check domain availability and look up registration data across multiple backends.
 ///
@@ -14,27 +16,37 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Check whether one or more domains are available for registration.
-    Check {
-        /// Domain name(s) to check, e.g. `example.com`.
-        #[arg(required = true, value_name = "DOMAIN")]
-        domains: Vec<String>,
-
-        /// Backend to use. Defaults to `rdap` (keyless). See `domain backends`.
-        #[arg(short, long, default_value = "rdap")]
-        backend: String,
-    },
+    Check(LookupArgs),
 
     /// Look up WHOIS / registration data (registrar, dates, nameservers) for a domain.
-    Whois {
-        /// Domain name(s) to look up, e.g. `example.com`.
-        #[arg(required = true, value_name = "DOMAIN")]
-        domains: Vec<String>,
-
-        /// Backend to use. Defaults to `rdap` (keyless). See `domain backends`.
-        #[arg(short, long, default_value = "rdap")]
-        backend: String,
-    },
+    Whois(LookupArgs),
 
     /// List the available backends and whether each needs an API key.
     Backends,
+}
+
+/// Shared arguments for the `check` and `whois` subcommands.
+///
+/// Domains may be passed as arguments, read from a file with `--file`, and/or
+/// piped on stdin — they are all merged and de-duplicated, then looked up
+/// concurrently (see `--concurrency`).
+#[derive(Args, Debug)]
+pub struct LookupArgs {
+    /// Domain name(s), e.g. `example.com`. If none are given and stdin is
+    /// piped, domains are read from stdin instead.
+    #[arg(value_name = "DOMAIN")]
+    pub domains: Vec<String>,
+
+    /// Backend to use. Defaults to `rdap` (keyless). See `domain backends`.
+    #[arg(short, long, default_value = "rdap")]
+    pub backend: String,
+
+    /// Maximum number of lookups to run concurrently.
+    #[arg(short, long, default_value_t = 10, value_name = "N")]
+    pub concurrency: usize,
+
+    /// Read additional domains from a file (one per line, whitespace-separated;
+    /// `#` starts a comment). Use `-` to read the list from stdin.
+    #[arg(short, long, value_name = "FILE")]
+    pub file: Option<PathBuf>,
 }
