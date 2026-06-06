@@ -1,8 +1,9 @@
 # domain-utils
 
 A small, fast CLI toolkit for domains: **check availability**, look up
-**WHOIS / RDAP registration data**, and (soon) inspect **DNS records** — across
-multiple backends.
+**WHOIS / RDAP registration data**, see **registration pricing**, and inspect
+**DNS records**, **email-security records**, and **TLS certificates** — across
+multiple backends, keyless by default.
 
 The default backend, **`auto`**, is **keyless** — no signup, no API key. It uses
 RDAP where a TLD supports it and falls back to port-43 WHOIS otherwise, so it
@@ -25,6 +26,10 @@ domain check example.com getme.dev acme.io
 
 # WHOIS / registration data
 domain whois example.com
+
+# Availability + price together
+domain check mystartup --category popular --price
+domain price com io dev ai          # registration pricing for TLDs
 
 # DNS records (A, AAAA, MX, NS, TXT by default)
 domain dns example.com
@@ -71,6 +76,27 @@ github.com
   ✓ SPF     v=spf1 ... ~all  (softfail)
   ✓ DMARC   p=quarantine
   ✓ DKIM    selectors: google, k1, s1, selector1
+```
+
+### Pricing
+
+`domain price <tld|domain>...` shows registration / renewal / transfer prices
+via Porkbun's public, keyless pricing endpoint (USD; these are Porkbun's retail
+prices — indicative, not a market minimum). Works by TLD, by `--category`, or
+`--all`. Add `--price` to `check` to show the registration price next to each
+available domain.
+
+```text
+$ domain price io dev ai
+Porkbun pricing (USD/yr):
+  .io             reg $28.12  renew $51.80  transfer $51.80
+  .dev            reg $10.81  renew $12.87  transfer $12.87
+  .ai             reg $82.70  renew $82.70  transfer $165.09
+
+$ domain check mystartup --category popular --price
+✓ mystartup.io  available  $28.12/yr
+✓ mystartup.dev  available  $10.81/yr
+...
 ```
 
 ### TLS certificate

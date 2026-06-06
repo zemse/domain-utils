@@ -37,6 +37,9 @@ pub enum Command {
     /// Inspect a domain's live TLS certificate (issuer, SANs, expiry).
     Tls(TlsArgs),
 
+    /// Show registration pricing for TLDs (via Porkbun, keyless).
+    Price(PriceArgs),
+
     /// List TLD categories, or the TLDs within one. Use `all` for every TLD.
     Tlds {
         /// Category name (e.g. `finance`). Omit to list all categories.
@@ -98,6 +101,31 @@ pub struct LookupArgs {
     /// Spray across every known TLD (~1400). Slow and prone to rate limits.
     #[arg(long)]
     pub all_tlds: bool,
+
+    /// Also show registration price (Porkbun, keyless) next to available results.
+    #[arg(long)]
+    pub price: bool,
+}
+
+/// Arguments for `price`.
+#[derive(Args, Debug)]
+pub struct PriceArgs {
+    /// TLDs or domains to price (the TLD is used), e.g. `com io example.dev`.
+    #[arg(value_name = "TLD|DOMAIN")]
+    pub items: Vec<String>,
+
+    /// Include all TLDs in these categories. See `domain tlds`.
+    #[arg(
+        short = 'C',
+        long = "category",
+        value_name = "CAT",
+        value_delimiter = ','
+    )]
+    pub categories: Vec<String>,
+
+    /// Price every TLD Porkbun offers.
+    #[arg(long)]
+    pub all: bool,
 }
 
 /// Arguments for `tls`.

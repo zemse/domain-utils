@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use crate::backend::{Availability, BACKENDS, DomainInfo};
 use crate::dns::DnsRecord;
 use crate::email::EmailInfo;
+use crate::pricing::TldPrice;
 use crate::tls::TlsInfo;
 
 fn color_enabled() -> bool {
@@ -39,15 +40,18 @@ fn bold(t: &str) -> String {
     paint("1", t)
 }
 
-/// One-line availability result for `domain check`.
-pub fn print_check(info: &DomainInfo) {
+/// One-line availability result for `domain check`. `price` (if any) is the
+/// formatted registration price, shown for available domains.
+pub fn print_check(info: &DomainInfo, price: Option<&str>) {
     match info.availability {
         Availability::Available => {
+            let price = price.map(|p| format!("  {}", dim(p))).unwrap_or_default();
             println!(
-                "{} {}  {}",
+                "{} {}  {}{}",
                 green("✓"),
                 bold(&info.domain),
-                green("available")
+                green("available"),
+                price
             );
         }
         Availability::Registered => {
@@ -284,6 +288,23 @@ pub fn print_tls(info: &TlsInfo) {
         field("SANs", &sans);
     }
     println!();
+}
+
+/// TLD registration pricing (`domain price`). Prices are Porkbun's, in USD.
+pub fn print_prices(results: &[(String, Option<TldPrice>)]) {
+    println!("{}", dim("Porkbun pricing (USD/yr):"));
+    for (tld, price) in results {
+        match price {
+            Some(p) => println!(
+                "  .{:<14} {}  {}  {}",
+                tld,
+                green(&format!("reg ${}", p.registration)),
+                dim(&format!("renew ${}", p.renewal)),
+                dim(&format!("transfer ${}", p.transfer)),
+            ),
+            None => println!("  .{:<14} {}", tld, dim("not offered by Porkbun")),
+        }
+    }
 }
 
 /// Running tally of a batch run, printed as a summary line at the end.

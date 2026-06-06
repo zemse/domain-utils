@@ -3,6 +3,7 @@ mod cli;
 mod dns;
 mod email;
 mod output;
+mod pricing;
 mod tlds;
 mod tls;
 
@@ -17,9 +18,10 @@ use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::backend::{Backend, DomainInfo};
-use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs, TlsArgs};
+use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs, PriceArgs, TlsArgs};
 use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 use crate::email::EmailInfo;
+use crate::pricing::{PriceClient, TldPrice};
 use crate::tls::TlsInfo;
 
 #[tokio::main]
@@ -63,6 +65,7 @@ async fn run(command: Command, json: bool) -> Result<ExitCode> {
         }
         Command::Email(input) => run_email(input, json).await,
         Command::Tls(args) => run_tls(args, json).await,
+        Command::Price(args) => run_price(args, json).await,
     }
 }
 
@@ -77,6 +80,23 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
     let backend_name = backend.name();
     let domains = expand_tlds(gather_domains(&args.input)?, &args)?;
 
+    // Pricing is best-effort: a fetch failure shouldn't fail the availability run.
+    let prices = if args.price {
+        match PriceClient::new().fetch_all().await {
+            Ok(map) => Some(map),
+            Err(e) => {
+                eprintln!("warning: could not fetch pricing: {e:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let price_of = |domain: &str| -> Option<&TldPrice> {
+        let prices = prices.as_ref()?;
+        prices.get(tld_label(domain))
+    };
+
     let results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
     let errors = results.iter().filter(|(_, r)| r.is_err()).count();
 
@@ -84,8 +104,19 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
         let arr: Vec<Value> = results
             .iter()
             .map(|(domain, result)| match result {
-                Ok(info) => serde_json::to_value(info)
-                    .unwrap_or_else(|_| json!({ "domain": domain, "error": "serialize failed" })),
+                Ok(info) => {
+                    let mut v =
+                        serde_json::to_value(info).unwrap_or_else(|_| json!({ "domain": domain }));
+                    if let Some(p) = price_of(&info.domain) {
+                        v["price"] = json!({
+                            "registration": p.registration,
+                            "renewal": p.renewal,
+                            "transfer": p.transfer,
+                            "source": "porkbun",
+                        });
+                    }
+                    v
+                }
                 Err(e) => json!({ "domain": domain, "error": format!("{e:#}") }),
             })
             .collect();
@@ -96,7 +127,11 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
             match result {
                 Ok(info) => {
                     match mode {
-                        Mode::Check => output::print_check(info),
+                        Mode::Check => {
+                            let price =
+                                price_of(&info.domain).map(|p| format!("${}/yr", p.registration));
+                            output::print_check(info, price.as_deref());
+                        }
                         Mode::Whois => output::print_whois(info),
                     }
                     summary.record_ok(info.availability);
@@ -113,6 +148,71 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
     }
 
     Ok(exit_code(errors))
+}
+
+/// The TLD label (last dotted component) of a domain, lowercased-as-given.
+fn tld_label(domain: &str) -> &str {
+    domain.rsplit('.').next().unwrap_or(domain)
+}
+
+async fn run_price(args: PriceArgs, json: bool) -> Result<ExitCode> {
+    let prices = PriceClient::new().fetch_all().await?;
+
+    let mut tld_list = Vec::new();
+    let mut seen = HashSet::new();
+    if args.all {
+        let mut keys: Vec<&String> = prices.keys().collect();
+        keys.sort();
+        for k in keys {
+            add_unique(&mut tld_list, &mut seen, k);
+        }
+    }
+    for item in &args.items {
+        add_unique(&mut tld_list, &mut seen, tld_label(item));
+    }
+    for cat in &args.categories {
+        let list = tlds::category(cat).ok_or_else(|| {
+            anyhow!(
+                "unknown category `{cat}`; see `domain tlds`. available: {}",
+                tlds::category_names().join(", ")
+            )
+        })?;
+        for t in list {
+            add_unique(&mut tld_list, &mut seen, t);
+        }
+    }
+    if tld_list.is_empty() {
+        bail!("give a TLD, a domain, or --category/--all");
+    }
+
+    let results: Vec<(String, Option<TldPrice>)> = tld_list
+        .into_iter()
+        .map(|tld| {
+            let price = prices.get(&tld).cloned();
+            (tld, price)
+        })
+        .collect();
+
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(tld, price)| match price {
+                Some(p) => json!({
+                    "tld": tld,
+                    "registration": p.registration,
+                    "renewal": p.renewal,
+                    "transfer": p.transfer,
+                    "source": "porkbun",
+                }),
+                None => json!({ "tld": tld, "offered": false }),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        output::print_prices(&results);
+    }
+
+    Ok(ExitCode::SUCCESS)
 }
 
 async fn run_dns(args: DnsArgs, json: bool) -> Result<ExitCode> {
