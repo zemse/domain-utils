@@ -1,11 +1,11 @@
 [package]
-name = "domain-rs"
+name = "domain-utils"
 version = "0.1.0"
 edition = "2024"
-description = "Check domain availability and WHOIS/registration data across multiple backends, keyless by default (RDAP)."
+description = "Domain toolkit: availability, WHOIS/RDAP registration data, and DNS records across multiple backends — keyless by default."
 authors = ["Soham Zemse <soham@zemse.in>"]
 license = "MIT"
-repository = "https://github.com/zemse/domain-rs"
+repository = "https://github.com/zemse/domain-utils"
 keywords = ["domain", "rdap", "whois", "availability", "cli"]
 categories = ["command-line-utilities"]
 # Whitelist what ships to crates.io (never blacklist).
@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

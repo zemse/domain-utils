@@ -37,8 +37,8 @@ pub struct LookupArgs {
     #[arg(value_name = "DOMAIN")]
     pub domains: Vec<String>,
 
-    /// Backend to use. Defaults to `rdap` (keyless). See `domain backends`.
-    #[arg(short, long, default_value = "rdap")]
+    /// Backend to use. Defaults to `auto` (RDAP→WHOIS, keyless). See `domain backends`.
+    #[arg(short, long, default_value = "auto")]
     pub backend: String,
 
     /// Maximum number of lookups to run concurrently.

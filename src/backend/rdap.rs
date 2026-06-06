@@ -13,7 +13,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use tokio::sync::OnceCell;
 
-use super::{Availability, DomainInfo};
+use super::{Availability, DomainInfo, normalize_domain, tld_of};
 
 const BOOTSTRAP_URL: &str = "https://data.iana.org/rdap/dns.json";
 
@@ -42,16 +42,13 @@ impl RdapBackend {
 
     pub async fn lookup(&self, domain: &str) -> Result<DomainInfo> {
         let domain = normalize_domain(domain)?;
-        let tld = domain
-            .rsplit('.')
-            .next()
-            .expect("normalized domain has a dot");
+        let tld = tld_of(&domain);
 
         let base = self.rdap_base_for_tld(tld).await?.ok_or_else(|| {
             anyhow!(
-                "`.{tld}` has no RDAP service in the IANA registry, \
-                 so availability can't be determined via the `rdap` backend; \
-                 try another backend (e.g. a port-43 WHOIS fallback) once available"
+                "`.{tld}` has no RDAP service in the IANA registry; \
+                 use `--backend whois` (or the default `--backend auto`) \
+                 to resolve it via port-43 WHOIS"
             )
         })?;
 
@@ -85,6 +82,11 @@ impl RdapBackend {
         }
     }
 
+    /// Whether the IANA bootstrap publishes an RDAP service for this TLD.
+    pub async fn has_rdap(&self, tld: &str) -> Result<bool> {
+        Ok(self.rdap_base_for_tld(tld).await?.is_some())
+    }
+
     /// Look up the registry RDAP base URL for a TLD via the cached bootstrap.
     async fn rdap_base_for_tld(&self, tld: &str) -> Result<Option<String>> {
         let bootstrap = self.bootstrap().await?;
@@ -110,22 +112,6 @@ impl RdapBackend {
             })
             .await
     }
-}
-
-/// Normalize user input into a bare lowercase domain with at least one dot.
-fn normalize_domain(input: &str) -> Result<String> {
-    let mut d = input.trim().trim_end_matches('.').to_ascii_lowercase();
-    // Strip a scheme/path if the user pasted a URL.
-    if let Some(rest) = d.split_once("://") {
-        d = rest.1.to_string();
-    }
-    if let Some((host, _)) = d.split_once('/') {
-        d = host.to_string();
-    }
-    if d.is_empty() || !d.contains('.') || d.starts_with('.') {
-        bail!("`{input}` is not a valid domain (expected something like `example.com`)");
-    }
-    Ok(d)
 }
 
 /// Find the registry RDAP base URL for a TLD in the IANA bootstrap document.

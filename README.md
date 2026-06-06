@@ -1,18 +1,19 @@
-# domain-rs
+# domain-utils
 
-A small, fast CLI to **check domain availability** and look up **WHOIS / registration data** across multiple registrar backends.
+A small, fast CLI toolkit for domains: **check availability**, look up
+**WHOIS / RDAP registration data**, and (soon) inspect **DNS records** — across
+multiple backends.
 
-The default backend, **`rdap`**, is **keyless** — no signup, no API key. It uses the
-IANA RDAP bootstrap registry to query each TLD's authoritative registry server
-directly. Additional backends (some requiring an API key) can be selected with
-`--backend`.
+The default backend, **`auto`**, is **keyless** — no signup, no API key. It uses
+RDAP where a TLD supports it and falls back to port-43 WHOIS otherwise, so it
+covers every TLD. Backends can be selected explicitly with `--backend`.
 
-The crate is published as **`domain-rs`**; it installs a binary named **`domain`**.
+The crate is published as **`domain-utils`**; it installs a binary named **`domain`**.
 
 ## Install
 
 ```sh
-cargo install domain-rs   # or: cargo install --path .
+cargo install domain-utils   # or: cargo install --path .
 ```
 
 ## Usage
@@ -82,26 +83,31 @@ example.com
 
 ## How availability is determined (and a pitfall it avoids)
 
-`rdap` maps the domain's TLD to its registry RDAP server via the IANA bootstrap
-registry, then queries that server:
+The default `auto` backend covers **every TLD** by combining two keyless sources:
 
-- registry returns **200** → **registered**
-- registry returns **404** → **available**
+1. **RDAP** maps the TLD to its registry RDAP server via the IANA bootstrap and
+   queries it: **200 → registered**, **404 → available**. Crucially, a `404` is
+   trusted as "available" **only** because the TLD was confirmed to have an RDAP
+   service first. (A naive "404 = available" check would wrongly report
+   registered `.io`/`.co` domains as free.)
+2. **Port-43 WHOIS** handles the ~180 ccTLDs with no RDAP service (`.io`, `.co`,
+   `.de`, `.me`, `.us`, …). The authoritative WHOIS server is discovered via
+   IANA referral, then the free-text response is parsed heuristically. Because
+   WHOIS formats vary by registry, this is best-effort and may return
+   **unknown** for an unrecognized response (rather than guessing).
 
-Crucially, a `404` is treated as "available" **only after** confirming the TLD has
-an RDAP service. TLDs with no RDAP service (e.g. `.de`, `.io`, `.co`, `.me`, `.us`)
-resolve to **unknown** rather than a false "available", and the CLI tells you to
-try another backend. (A naive "404 = available" check would wrongly report
-registered `.io`/`.co` domains as free.)
+`auto` picks RDAP when the TLD supports it, otherwise WHOIS.
 
 ## Backends
 
-| Backend | Key required | WHOIS | Notes |
-|---------|--------------|-------|-------|
-| `rdap`  | no (keyless) | yes   | Default. IANA bootstrap → registry RDAP. gTLDs + ~70 ccTLDs. |
+| Backend | Key required | Covers | Notes |
+|---------|--------------|--------|-------|
+| `auto`  | no (keyless) | all TLDs | **Default.** RDAP where available, else port-43 WHOIS. |
+| `rdap`  | no (keyless) | gTLDs + RDAP ccTLDs | Structured, authoritative. Errors on non-RDAP TLDs. |
+| `whois` | no (keyless) | all TLDs | Port-43 WHOIS via IANA referral. Free-text, best-effort. |
 
-Planned: a port-43 WHOIS fallback for non-RDAP ccTLDs, and keyed registrar
-backends (Porkbun, AWS Route 53, Gandi, Name.com) for pricing. See `RESEARCH.md`.
+Planned: keyed registrar backends (Porkbun, AWS Route 53, Gandi, Name.com) for
+pricing. See `RESEARCH.md`.
 
 ## License
 
