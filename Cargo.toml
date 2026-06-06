@@ -1,6 +1,6 @@
 [package]
 name = "domain-utils"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Domain toolkit: availability, WHOIS/RDAP registration data, and DNS records across multiple backends — keyless by default."
 authors = ["Soham Zemse <soham@zemse.in>"]

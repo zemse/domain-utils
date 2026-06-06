@@ -32,17 +32,20 @@ on `main`; pending items are enhancements, not part of the original brief.
 - [x] Publish to crates.io (`cargo install domain-utils`)
 
 ### Pricing
-- [ ] Default lookup `domain <name>` does not show the registration price when a
-      domain is available — it should. (`check --price` shows it, but the bare
-      `domain <name>` / default path omits it.) Show the cost next to available
-      names in the default lookup, matching `check --price`.
+- [x] Default lookup `domain <name>` now shows the registration price next to
+      any available name automatically (was `check --price`-only). Shipped in
+      v0.1.1.
 - [ ] Multi-registrar pricing — currently Porkbun-only (indicative). Add keyed
       backends (GoDaddy, Gandi, Name.com, AWS Route 53) per `RESEARCH.md`
-- [ ] Show cheapest across sources / price comparison
+      — **blocked: needs registrar API credentials** (and GoDaddy gates on 50+
+      domains, Namecheap on IP-whitelisting). Can't be built+verified without keys.
+- [ ] Show cheapest across sources / price comparison — **blocked on the above**
+      (only one keyless price source exists today: Porkbun).
 
 ### Availability backends
 - [ ] Keyed registrar backends from `RESEARCH.md` (Route 53, Gandi, Name.com, …)
       beyond the current `rdap` / `whois` / `auto`
+      — **blocked: needs registrar API credentials** (same gate as keyed pricing).
 
 ## Notes
 - Keyless-by-default is the project principle; keyed backends should be opt-in.

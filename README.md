@@ -25,8 +25,9 @@ cargo install domain-utils   # or: cargo install --path .
 ## Usage
 
 ```sh
-# Quick lookup (no subcommand): checks availability, and for any registered
-# name also prints its full WHOIS/registration record.
+# Quick lookup (no subcommand): checks availability, shows the registration
+# price for any available name, and for any registered name also prints its
+# full WHOIS/registration record.
 domain example.com
 domain example.com getme.dev acme.io
 
@@ -263,7 +264,8 @@ $ domain check example.com google.com freeme-zxqw12345.com
 ### Example
 
 ```text
-# Default lookup: availability, plus WHOIS for registered names.
+# Default lookup: availability + price for available names, plus WHOIS for
+# registered ones.
 $ domain example.com freeme-zxqw12345.com
 ✗ example.com  registered  (RESERVED-Internet Assigned Numbers Authority)
 example.com
@@ -272,7 +274,7 @@ example.com
   expires:      2026-08-13T04:00:00Z
   source:       rdap
 
-✓ freeme-zxqw12345.com  available
+✓ freeme-zxqw12345.com  available  $11.08/yr
 — 1 available · 1 registered
 ```
 

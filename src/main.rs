@@ -119,8 +119,12 @@ async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCod
     let backend_name = backend.name();
     let domains = expand_tlds(gather_domains(&args.input)?, &args)?;
 
+    // The default `domain <name>` lookup shows price for available names
+    // automatically; `check`/`whois` only fetch pricing when asked with --price.
+    let want_prices = args.price || mode == Mode::Lookup;
+
     // Pricing is best-effort: a fetch failure shouldn't fail the availability run.
-    let prices = if args.price {
+    let prices = if want_prices {
         match PriceClient::new().fetch_all().await {
             Ok(map) => Some(map),
             Err(e) => {
