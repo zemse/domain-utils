@@ -38,6 +38,31 @@ domain check example.com --backend whois
 domain backends
 ```
 
+### Multi-TLD checks & categories
+
+Check one name across many TLDs at once. Pick TLDs explicitly, by curated
+**category**, or all of them:
+
+```sh
+domain check mystartup --tlds com,io,dev,ai      # explicit TLDs
+domain check mystartup --category finance        # all finance TLDs
+domain check mystartup -C tech,popular           # multiple categories
+domain check mystartup --all-tlds                # every TLD (~1400; slow)
+
+domain tlds                                      # list categories
+domain tlds finance                              # TLDs in a category
+domain tlds all                                  # every known TLD
+```
+
+The full IANA TLD list and the category map are baked into the binary (no
+network needed); a test keeps every category entry pinned to a real delegation.
+
+### JSON output
+
+Add `--json` to any command for machine-readable output (a JSON array), e.g.
+`domain check example.com --json` or `domain dns example.com --json`. Pipe it to
+`jq` to script around it.
+
 ### DNS records
 
 `domain dns` fetches live records over DNS-over-HTTPS (keyless, no resolver

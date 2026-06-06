@@ -6,7 +6,7 @@
 //! stack the other backends use.
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Record types queried by `dns` when none are given explicitly.
 pub const DEFAULT_TYPES: &[&str] = &["A", "AAAA", "MX", "NS", "TXT"];
@@ -14,8 +14,9 @@ pub const DEFAULT_TYPES: &[&str] = &["A", "AAAA", "MX", "NS", "TXT"];
 const DOH_ENDPOINT: &str = "https://dns.google/resolve";
 
 /// A single resolved DNS record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DnsRecord {
+    #[serde(rename = "type")]
     pub record_type: String,
     pub value: String,
     pub ttl: u32,

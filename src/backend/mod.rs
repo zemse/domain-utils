@@ -11,6 +11,7 @@ mod rdap;
 mod whois;
 
 use anyhow::{Result, bail};
+use serde::Serialize;
 
 use self::auto::AutoBackend;
 use self::rdap::RdapBackend;
@@ -47,7 +48,8 @@ pub struct BackendInfo {
 }
 
 /// Whether a domain is available, taken, or could not be determined.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Availability {
     /// The registry has no record of the domain — it can be registered.
     Available,
@@ -59,15 +61,21 @@ pub enum Availability {
 }
 
 /// Registration data for a domain, as much as the backend could resolve.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DomainInfo {
     pub domain: String,
     pub availability: Availability,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub registrar: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub registered: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub nameservers: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub statuses: Vec<String>,
     /// Name of the backend that produced this result.
     pub source: &'static str,

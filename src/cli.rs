@@ -11,6 +11,10 @@ use clap::{Args, Parser, Subcommand};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
+
+    /// Emit machine-readable JSON instead of the human-friendly output.
+    #[arg(long, global = true)]
+    pub json: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -26,6 +30,13 @@ pub enum Command {
 
     /// Show a domain's nameservers (shortcut for `dns --type NS`).
     Ns(BatchInput),
+
+    /// List TLD categories, or the TLDs within one. Use `all` for every TLD.
+    Tlds {
+        /// Category name (e.g. `finance`). Omit to list all categories.
+        #[arg(value_name = "CATEGORY")]
+        category: Option<String>,
+    },
 
     /// List the available backends and whether each needs an API key.
     Backends,
@@ -62,6 +73,25 @@ pub struct LookupArgs {
     /// Backend to use. Defaults to `auto` (RDAP→WHOIS, keyless). See `domain backends`.
     #[arg(short, long, default_value = "auto")]
     pub backend: String,
+
+    /// Spray each name across these TLDs (comma-separated or repeated), e.g.
+    /// `--tlds com,io,dev`. The name's own TLD (if any) is ignored.
+    #[arg(long, value_name = "TLD", value_delimiter = ',')]
+    pub tlds: Vec<String>,
+
+    /// Spray across all TLDs in these categories, e.g. `--category finance,tech`.
+    /// See `domain tlds` for the list.
+    #[arg(
+        short = 'C',
+        long = "category",
+        value_name = "CAT",
+        value_delimiter = ','
+    )]
+    pub categories: Vec<String>,
+
+    /// Spray across every known TLD (~1400). Slow and prone to rate limits.
+    #[arg(long)]
+    pub all_tlds: bool,
 }
 
 /// Arguments for `dns`.

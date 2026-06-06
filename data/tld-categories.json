@@ -1,0 +1,18 @@
+{
+  "popular": ["com", "net", "org", "io", "co", "dev", "app", "ai", "me", "xyz", "info", "online", "site", "tech"],
+  "business": ["business", "company", "llc", "ltd", "inc", "enterprises", "ventures", "holdings", "agency", "gmbh", "limited", "group", "industries", "management", "solutions", "services", "consulting", "partners"],
+  "finance": ["finance", "financial", "bank", "insurance", "money", "fund", "capital", "investments", "loans", "credit", "creditcard", "tax", "exchange", "cash", "trading", "markets", "insure", "claims", "mortgage", "accountant", "accountants"],
+  "tech": ["tech", "software", "computer", "digital", "network", "systems", "cloud", "codes", "hosting", "host", "technology", "app", "dev", "io", "ai"],
+  "ecommerce": ["shop", "store", "shopping", "market", "deals", "sale", "boutique", "gifts", "discount", "coupons", "bargains", "blackfriday", "shoes", "clothing", "fashion", "jewelry"],
+  "media": ["media", "news", "blog", "press", "tv", "fm", "studio", "live", "video", "photography", "photos", "film", "show", "theater"],
+  "design": ["design", "art", "gallery", "ink", "graphics", "pics", "productions", "studio"],
+  "food": ["cafe", "restaurant", "bar", "pizza", "kitchen", "recipes", "coffee", "wine", "beer", "menu", "cooking", "catering", "farm"],
+  "health": ["health", "healthcare", "clinic", "care", "dental", "doctor", "fitness", "surgery", "hospital", "dentist"],
+  "education": ["education", "academy", "school", "college", "university", "courses", "training", "institute", "study", "degree", "mba"],
+  "realestate": ["realestate", "properties", "house", "homes", "rentals", "condos", "land", "apartments", "villas", "realty", "lease"],
+  "legal": ["law", "legal", "attorney", "lawyer"],
+  "travel": ["travel", "flights", "hotels", "vacations", "tours", "cruises", "holiday", "voyage", "camp", "tickets"],
+  "sports": ["sport", "football", "soccer", "golf", "tennis", "hockey", "run", "fit", "team", "fan", "ski", "bike", "racing", "fishing"],
+  "nonprofit": ["ngo", "ong", "foundation", "charity", "gives", "church", "faith", "community"],
+  "web": ["online", "site", "website", "space", "link", "click", "page", "world", "today", "live", "network", "digital", "cloud"]
+}

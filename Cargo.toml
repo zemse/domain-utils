@@ -9,7 +9,7 @@ repository = "https://github.com/zemse/domain-utils"
 keywords = ["domain", "rdap", "whois", "availability", "cli"]
 categories = ["command-line-utilities"]
 # Whitelist what ships to crates.io (never blacklist).
-include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE"]
+include = ["src/**/*.rs", "data/tlds.txt", "data/tld-categories.json", "Cargo.toml", "README.md", "LICENSE"]
 
 [[bin]]
 name = "domain"

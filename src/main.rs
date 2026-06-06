@@ -2,6 +2,7 @@ mod backend;
 mod cli;
 mod dns;
 mod output;
+mod tlds;
 
 use std::collections::HashSet;
 use std::io::{IsTerminal, Read};
@@ -10,6 +11,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
+use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 
 use crate::backend::{Backend, DomainInfo};
@@ -19,7 +21,8 @@ use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    match run(cli).await {
+    let json = cli.json;
+    match run(cli.command, json).await {
         Ok(code) => code,
         Err(e) => {
             eprintln!("error: {e:#}");
@@ -34,26 +37,30 @@ enum Mode {
     Whois,
 }
 
-async fn run(cli: Cli) -> Result<ExitCode> {
-    match cli.command {
+async fn run(command: Command, json: bool) -> Result<ExitCode> {
+    match command {
         Command::Backends => {
             output::print_backends();
             Ok(ExitCode::SUCCESS)
         }
-        Command::Check(args) => run_lookups(args, Mode::Check).await,
-        Command::Whois(args) => run_lookups(args, Mode::Whois).await,
-        Command::Dns(args) => run_dns(args).await,
+        Command::Tlds { category } => run_tlds(category, json),
+        Command::Check(args) => run_lookups(args, Mode::Check, json).await,
+        Command::Whois(args) => run_lookups(args, Mode::Whois, json).await,
+        Command::Dns(args) => run_dns(args, json).await,
         Command::Ns(input) => {
-            run_dns(DnsArgs {
-                input,
-                types: vec!["NS".to_string()],
-            })
+            run_dns(
+                DnsArgs {
+                    input,
+                    types: vec!["NS".to_string()],
+                },
+                json,
+            )
             .await
         }
     }
 }
 
-async fn run_lookups(args: LookupArgs, mode: Mode) -> Result<ExitCode> {
+async fn run_lookups(args: LookupArgs, mode: Mode, json: bool) -> Result<ExitCode> {
     let backend = Backend::from_name(&args.backend)?;
     if matches!(mode, Mode::Whois) && !backend.supports_whois() {
         bail!(
@@ -62,39 +69,47 @@ async fn run_lookups(args: LookupArgs, mode: Mode) -> Result<ExitCode> {
         );
     }
     let backend_name = backend.name();
-    let domains = gather_domains(&args.input)?;
+    let domains = expand_tlds(gather_domains(&args.input)?, &args)?;
 
     let results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
 
-    // Print in input order; tally a summary for multi-domain runs.
-    let mut summary = output::Summary::default();
-    for (domain, result) in &results {
-        match result {
-            Ok(info) => {
-                match mode {
-                    Mode::Check => output::print_check(info),
-                    Mode::Whois => output::print_whois(info),
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(domain, result)| match result {
+                Ok(info) => serde_json::to_value(info)
+                    .unwrap_or_else(|_| json!({ "domain": domain, "error": "serialize failed" })),
+                Err(e) => json!({ "domain": domain, "error": format!("{e:#}") }),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        let mut summary = output::Summary::default();
+        for (domain, result) in &results {
+            match result {
+                Ok(info) => {
+                    match mode {
+                        Mode::Check => output::print_check(info),
+                        Mode::Whois => output::print_whois(info),
+                    }
+                    summary.record_ok(info.availability);
                 }
-                summary.record_ok(info.availability);
-            }
-            Err(e) => {
-                output::print_lookup_error(domain, backend_name, e);
-                summary.record_err();
+                Err(e) => {
+                    output::print_lookup_error(domain, backend_name, e);
+                    summary.record_err();
+                }
             }
         }
-    }
-    if domains.len() > 1 {
-        output::print_summary(&summary);
+        if domains.len() > 1 {
+            output::print_summary(&summary);
+        }
     }
 
-    Ok(if summary.errors > 0 {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(exit_code(errors))
 }
 
-async fn run_dns(args: DnsArgs) -> Result<ExitCode> {
+async fn run_dns(args: DnsArgs, json: bool) -> Result<ExitCode> {
     let domains = gather_domains(&args.input)?;
     let types: Vec<String> = if args.types.is_empty() {
         DEFAULT_TYPES.iter().map(|t| t.to_string()).collect()
@@ -110,21 +125,147 @@ async fn run_dns(args: DnsArgs) -> Result<ExitCode> {
     )
     .await;
 
-    let mut any_error = false;
-    for (domain, per_type) in &results {
-        for (_, r) in per_type {
-            if r.is_err() {
-                any_error = true;
-            }
+    let mut errors = 0usize;
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(domain, per_type)| {
+                let mut records = Vec::new();
+                let mut errs = serde_json::Map::new();
+                for (rtype, result) in per_type {
+                    match result {
+                        Ok(recs) => {
+                            records.extend(recs.iter().filter_map(|r| serde_json::to_value(r).ok()))
+                        }
+                        Err(e) => {
+                            errors += 1;
+                            errs.insert(rtype.clone(), json!(format!("{e:#}")));
+                        }
+                    }
+                }
+                let mut obj = json!({ "domain": domain, "records": records });
+                if !errs.is_empty() {
+                    obj["errors"] = Value::Object(errs);
+                }
+                obj
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        for (domain, per_type) in &results {
+            errors += per_type.iter().filter(|(_, r)| r.is_err()).count();
+            output::print_dns(domain, per_type);
         }
-        output::print_dns(domain, per_type);
     }
 
-    Ok(if any_error {
+    Ok(exit_code(errors))
+}
+
+fn run_tlds(category: Option<String>, json: bool) -> Result<ExitCode> {
+    match category.as_deref() {
+        // List all categories.
+        None => {
+            if json {
+                println!("{}", serde_json::to_string_pretty(tlds::categories())?);
+            } else {
+                println!("TLD categories (use with `check --category <name>`):");
+                for name in tlds::category_names() {
+                    let list = tlds::category(name).unwrap_or(&[]);
+                    println!("  {name:<11} ({:>2})  {}", list.len(), list.join(" "));
+                }
+                println!(
+                    "\n`all` selects every known TLD ({}).",
+                    tlds::all_tlds().len()
+                );
+            }
+        }
+        // Every known TLD.
+        Some("all") => {
+            let all = tlds::all_tlds();
+            if json {
+                println!("{}", serde_json::to_string_pretty(all)?);
+            } else {
+                for t in all {
+                    println!("{t}");
+                }
+            }
+        }
+        // A specific category.
+        Some(name) => {
+            let list = tlds::category(name).ok_or_else(|| {
+                anyhow!(
+                    "unknown category `{name}`; available: {}",
+                    tlds::category_names().join(", ")
+                )
+            })?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(list)?);
+            } else {
+                for t in list {
+                    println!("{t}");
+                }
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// If any TLD-spray option is set, expand each input into `label.tld` for every
+/// selected TLD (the input's own TLD is dropped). Otherwise return domains as-is.
+fn expand_tlds(domains: Vec<String>, args: &LookupArgs) -> Result<Vec<String>> {
+    if args.tlds.is_empty() && args.categories.is_empty() && !args.all_tlds {
+        return Ok(domains);
+    }
+
+    let mut tld_list: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+    if args.all_tlds {
+        for t in tlds::all_tlds() {
+            add_unique(&mut tld_list, &mut seen, t);
+        }
+    }
+    for t in &args.tlds {
+        add_unique(&mut tld_list, &mut seen, t);
+    }
+    for cat in &args.categories {
+        let list = tlds::category(cat).ok_or_else(|| {
+            anyhow!(
+                "unknown category `{cat}`; see `domain tlds`. available: {}",
+                tlds::category_names().join(", ")
+            )
+        })?;
+        for t in list {
+            add_unique(&mut tld_list, &mut seen, t);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut out_seen = HashSet::new();
+    for d in &domains {
+        let label = d.split('.').next().unwrap_or(d);
+        for tld in &tld_list {
+            let fqdn = format!("{label}.{tld}");
+            if out_seen.insert(fqdn.clone()) {
+                out.push(fqdn);
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn add_unique(list: &mut Vec<String>, seen: &mut HashSet<String>, value: &str) {
+    let value = value.trim().trim_start_matches('.').to_ascii_lowercase();
+    if !value.is_empty() && seen.insert(value.clone()) {
+        list.push(value);
+    }
+}
+
+fn exit_code(errors: usize) -> ExitCode {
+    if errors > 0 {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
-    })
+    }
 }
 
 /// Resolve every (domain, type) pair concurrently (bounded by `concurrency`),
