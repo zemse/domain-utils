@@ -57,6 +57,22 @@ domain tlds all                                  # every known TLD
 The full IANA TLD list and the category map are baked into the binary (no
 network needed); a test keeps every category entry pinned to a real delegation.
 
+### Email security
+
+`domain email <domain>` inspects a domain's mail-security posture over DNS
+(keyless): MX records, SPF (with the `all` policy), DMARC (with the `p=`
+policy), and DKIM. DKIM has no DNS discovery, so a set of common selectors is
+probed — "none found" means none of those common selectors, not "no DKIM".
+
+```text
+$ domain email github.com
+github.com
+  ✓ MX      1 record(s)
+  ✓ SPF     v=spf1 ... ~all  (softfail)
+  ✓ DMARC   p=quarantine
+  ✓ DKIM    selectors: google, k1, s1, selector1
+```
+
 ### JSON output
 
 Add `--json` to any command for machine-readable output (a JSON array), e.g.

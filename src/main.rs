@@ -1,6 +1,7 @@
 mod backend;
 mod cli;
 mod dns;
+mod email;
 mod output;
 mod tlds;
 
@@ -17,6 +18,7 @@ use tokio::sync::Semaphore;
 use crate::backend::{Backend, DomainInfo};
 use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs};
 use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
+use crate::email::EmailInfo;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -57,6 +59,7 @@ async fn run(command: Command, json: bool) -> Result<ExitCode> {
             )
             .await
         }
+        Command::Email(input) => run_email(input, json).await,
     }
 }
 
@@ -159,6 +162,68 @@ async fn run_dns(args: DnsArgs, json: bool) -> Result<ExitCode> {
     }
 
     Ok(exit_code(errors))
+}
+
+async fn run_email(input: BatchInput, json: bool) -> Result<ExitCode> {
+    let concurrency = input.concurrency;
+    let domains = gather_domains(&input)?;
+    let results = email_all(Arc::new(DnsClient::new()), &domains, concurrency).await;
+    let errors = results.iter().filter(|(_, r)| r.is_err()).count();
+
+    if json {
+        let arr: Vec<Value> = results
+            .iter()
+            .map(|(domain, result)| match result {
+                Ok(info) => serde_json::to_value(info)
+                    .unwrap_or_else(|_| json!({ "domain": domain, "error": "serialize failed" })),
+                Err(e) => json!({ "domain": domain, "error": format!("{e:#}") }),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+    } else {
+        for (domain, result) in &results {
+            match result {
+                Ok(info) => output::print_email(info),
+                Err(e) => output::print_lookup_error(domain, "email", e),
+            }
+        }
+    }
+
+    Ok(exit_code(errors))
+}
+
+/// Gather email-security records for every domain concurrently, in input order.
+async fn email_all(
+    client: Arc<DnsClient>,
+    domains: &[String],
+    concurrency: usize,
+) -> Vec<(String, Result<EmailInfo>)> {
+    let sem = Arc::new(Semaphore::new(concurrency.max(1)));
+    let mut set = tokio::task::JoinSet::new();
+    for (index, domain) in domains.iter().cloned().enumerate() {
+        let client = Arc::clone(&client);
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("semaphore is not closed");
+            let result = email::lookup(&client, &domain).await;
+            (index, domain, result)
+        });
+    }
+
+    let mut slots: Vec<Option<(String, Result<EmailInfo>)>> =
+        (0..domains.len()).map(|_| None).collect();
+    while let Some(joined) = set.join_next().await {
+        if let Ok((index, domain, result)) = joined {
+            slots[index] = Some((domain, result));
+        }
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            slot.unwrap_or_else(|| (domains[i].clone(), Err(anyhow!("email task failed"))))
+        })
+        .collect()
 }
 
 fn run_tlds(category: Option<String>, json: bool) -> Result<ExitCode> {

@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 
 use crate::backend::{Availability, BACKENDS, DomainInfo};
 use crate::dns::DnsRecord;
+use crate::email::EmailInfo;
 
 fn color_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -167,6 +168,81 @@ pub fn print_dns(domain: &str, per_type: &[(String, anyhow::Result<Vec<DnsRecord
         }
     }
     println!();
+}
+
+/// Email-security posture for one domain (`domain email`).
+pub fn print_email(info: &EmailInfo) {
+    println!("{}", bold(&info.domain));
+
+    // MX
+    if info.mx.is_empty() {
+        println!("  {} {}  {}", red("✗"), pad("MX"), dim("no MX records"));
+    } else {
+        println!(
+            "  {} {}  {} record(s)",
+            green("✓"),
+            pad("MX"),
+            info.mx.len()
+        );
+        for mx in &info.mx {
+            println!("           {}", dim(mx));
+        }
+    }
+
+    // SPF
+    match &info.spf {
+        Some(record) => {
+            let policy = info
+                .spf_policy
+                .as_deref()
+                .map(|p| format!("  {}", dim(&format!("({p})"))))
+                .unwrap_or_default();
+            println!("  {} {}  {}{}", green("✓"), pad("SPF"), record, policy);
+        }
+        None => println!("  {} {}  {}", red("✗"), pad("SPF"), dim("no SPF record")),
+    }
+
+    // DMARC
+    match &info.dmarc {
+        Some(_) => {
+            let policy = info.dmarc_policy.as_deref().unwrap_or("(no p= tag)");
+            let warn = if info.dmarc_policy.as_deref() == Some("none") {
+                format!("  {}", dim("(monitoring only)"))
+            } else {
+                String::new()
+            };
+            println!("  {} {}  p={}{}", green("✓"), pad("DMARC"), policy, warn);
+        }
+        None => println!(
+            "  {} {}  {}",
+            red("✗"),
+            pad("DMARC"),
+            dim("no DMARC record")
+        ),
+    }
+
+    // DKIM
+    if info.dkim_selectors.is_empty() {
+        println!(
+            "  {} {}  {}",
+            yellow("?"),
+            pad("DKIM"),
+            dim("no common selector found (DKIM may use a custom selector)")
+        );
+    } else {
+        println!(
+            "  {} {}  selectors: {}",
+            green("✓"),
+            pad("DKIM"),
+            info.dkim_selectors.join(", ")
+        );
+    }
+    println!();
+}
+
+/// Pad a short record-type label to a fixed width (color-safe — no color here).
+fn pad(label: &str) -> String {
+    format!("{label:<6}")
 }
 
 /// Running tally of a batch run, printed as a summary line at the end.

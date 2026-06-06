@@ -31,6 +31,9 @@ pub enum Command {
     /// Show a domain's nameservers (shortcut for `dns --type NS`).
     Ns(BatchInput),
 
+    /// Inspect email-security records: MX, SPF, DMARC, DKIM.
+    Email(BatchInput),
+
     /// List TLD categories, or the TLDs within one. Use `all` for every TLD.
     Tlds {
         /// Category name (e.g. `finance`). Omit to list all categories.

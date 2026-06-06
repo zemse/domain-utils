@@ -22,6 +22,7 @@ pub struct DnsRecord {
     pub ttl: u32,
 }
 
+#[derive(Clone)]
 pub struct DnsClient {
     client: reqwest::Client,
 }
