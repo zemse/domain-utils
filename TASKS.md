@@ -27,9 +27,9 @@ on `main`; pending items are enhancements, not part of the original brief.
 ## Pending
 
 ### Release / distribution
-- [ ] Create GitHub remote and push `main`
-- [ ] Tag and cut `v0.1.0` (GitHub release with notes)
-- [ ] Publish to crates.io (`cargo install domain-utils`)
+- [x] Create GitHub remote and push `main` (github.com/zemse/domain-utils)
+- [x] Tag and cut `v0.1.0` (GitHub release with notes)
+- [x] Publish to crates.io (`cargo install domain-utils`)
 
 ### Pricing
 - [ ] Multi-registrar pricing — currently Porkbun-only (indicative). Add keyed
