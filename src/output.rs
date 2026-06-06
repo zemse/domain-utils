@@ -5,6 +5,7 @@ use std::io::IsTerminal;
 use std::sync::OnceLock;
 
 use crate::backend::{Availability, BACKENDS, DomainInfo};
+use crate::dns::DnsRecord;
 
 fn color_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -133,6 +134,39 @@ pub fn print_lookup_error(domain: &str, backend: &str, err: &anyhow::Error) {
         bold(domain),
         dim(&format!("[{backend}] {err:#}"))
     );
+}
+
+/// DNS records for one domain, grouped by the queried record type.
+pub fn print_dns(domain: &str, per_type: &[(String, anyhow::Result<Vec<DnsRecord>>)]) {
+    println!("{}", bold(domain));
+    for (rtype, result) in per_type {
+        match result {
+            Ok(records) if records.is_empty() => {
+                println!("  {:<6} {}", dim(rtype), dim("(none)"));
+            }
+            Ok(records) => {
+                for rec in records {
+                    // A record's own type can differ from the query (e.g. a
+                    // CNAME returned when asking for A); show the actual type.
+                    let label = if &rec.record_type == rtype {
+                        rtype.clone()
+                    } else {
+                        format!("{rtype}→{}", rec.record_type)
+                    };
+                    println!(
+                        "  {:<6} {}  {}",
+                        green(&label),
+                        rec.value,
+                        dim(&format!("ttl {}", rec.ttl))
+                    );
+                }
+            }
+            Err(e) => {
+                println!("  {:<6} {}", red(rtype), dim(&format!("error: {e:#}")));
+            }
+        }
+    }
+    println!();
 }
 
 /// Running tally of a batch run, printed as a summary line at the end.

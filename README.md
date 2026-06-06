@@ -19,18 +19,38 @@ cargo install domain-utils   # or: cargo install --path .
 ## Usage
 
 ```sh
-# Check availability (default backend: rdap, keyless)
+# Check availability (default backend: auto = RDAP→WHOIS, keyless)
 domain check example.com
 domain check example.com getme.dev acme.io
 
 # WHOIS / registration data
 domain whois example.com
 
+# DNS records (A, AAAA, MX, NS, TXT by default)
+domain dns example.com
+domain dns example.com --type MX,TXT      # only these record types
+domain ns example.com                     # nameservers (shortcut for `dns -t NS`)
+
 # Pick a backend explicitly
-domain check example.com --backend rdap
+domain check example.com --backend whois
 
 # List backends and whether each needs an API key
 domain backends
+```
+
+### DNS records
+
+`domain dns` fetches live records over DNS-over-HTTPS (keyless, no resolver
+setup). Default types are `A,AAAA,MX,NS,TXT`; override with `--type` (`-t`),
+comma-separated or repeated. `domain ns` is a shortcut for nameservers. Both
+accept multiple domains / `--file` / stdin and run concurrently.
+
+```text
+$ domain dns example.com -t A,NS
+example.com
+  A      104.20.23.154  ttl 300
+  NS     hera.ns.cloudflare.com.  ttl 21600
+  NS     elliott.ns.cloudflare.com.  ttl 21600
 ```
 
 ### Batch checks

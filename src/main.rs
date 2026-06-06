@@ -1,5 +1,6 @@
 mod backend;
 mod cli;
+mod dns;
 mod output;
 
 use std::collections::HashSet;
@@ -12,7 +13,8 @@ use clap::Parser;
 use tokio::sync::Semaphore;
 
 use crate::backend::{Backend, DomainInfo};
-use crate::cli::{Cli, Command, LookupArgs};
+use crate::cli::{BatchInput, Cli, Command, DnsArgs, LookupArgs};
+use crate::dns::{DEFAULT_TYPES, DnsClient, DnsRecord};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -40,6 +42,14 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Check(args) => run_lookups(args, Mode::Check).await,
         Command::Whois(args) => run_lookups(args, Mode::Whois).await,
+        Command::Dns(args) => run_dns(args).await,
+        Command::Ns(input) => {
+            run_dns(DnsArgs {
+                input,
+                types: vec!["NS".to_string()],
+            })
+            .await
+        }
     }
 }
 
@@ -52,9 +62,9 @@ async fn run_lookups(args: LookupArgs, mode: Mode) -> Result<ExitCode> {
         );
     }
     let backend_name = backend.name();
-    let domains = gather_domains(&args)?;
+    let domains = gather_domains(&args.input)?;
 
-    let results = lookup_all(Arc::new(backend), &domains, args.concurrency).await;
+    let results = lookup_all(Arc::new(backend), &domains, args.input.concurrency).await;
 
     // Print in input order; tally a summary for multi-domain runs.
     let mut summary = output::Summary::default();
@@ -82,6 +92,91 @@ async fn run_lookups(args: LookupArgs, mode: Mode) -> Result<ExitCode> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+async fn run_dns(args: DnsArgs) -> Result<ExitCode> {
+    let domains = gather_domains(&args.input)?;
+    let types: Vec<String> = if args.types.is_empty() {
+        DEFAULT_TYPES.iter().map(|t| t.to_string()).collect()
+    } else {
+        args.types.iter().map(|t| t.to_ascii_uppercase()).collect()
+    };
+
+    let results = resolve_all(
+        Arc::new(DnsClient::new()),
+        &domains,
+        &types,
+        args.input.concurrency,
+    )
+    .await;
+
+    let mut any_error = false;
+    for (domain, per_type) in &results {
+        for (_, r) in per_type {
+            if r.is_err() {
+                any_error = true;
+            }
+        }
+        output::print_dns(domain, per_type);
+    }
+
+    Ok(if any_error {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+/// Resolve every (domain, type) pair concurrently (bounded by `concurrency`),
+/// returning, per domain in input order, the records for each type in order.
+#[allow(clippy::type_complexity)]
+async fn resolve_all(
+    client: Arc<DnsClient>,
+    domains: &[String],
+    types: &[String],
+    concurrency: usize,
+) -> Vec<(String, Vec<(String, Result<Vec<DnsRecord>>)>)> {
+    let sem = Arc::new(Semaphore::new(concurrency.max(1)));
+    let mut set = tokio::task::JoinSet::new();
+    for (di, domain) in domains.iter().cloned().enumerate() {
+        for (ti, rtype) in types.iter().cloned().enumerate() {
+            let client = Arc::clone(&client);
+            let sem = Arc::clone(&sem);
+            let domain = domain.clone();
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.expect("semaphore is not closed");
+                let result = client.lookup(&domain, &rtype).await;
+                (di, ti, rtype, result)
+            });
+        }
+    }
+
+    // grid[di][ti] = (type, result)
+    let mut grid: Vec<Vec<Option<(String, Result<Vec<DnsRecord>>)>>> = domains
+        .iter()
+        .map(|_| (0..types.len()).map(|_| None).collect())
+        .collect();
+    while let Some(joined) = set.join_next().await {
+        if let Ok((di, ti, rtype, result)) = joined {
+            grid[di][ti] = Some((rtype, result));
+        }
+    }
+
+    domains
+        .iter()
+        .cloned()
+        .zip(grid)
+        .map(|(domain, row)| {
+            let per_type = row
+                .into_iter()
+                .enumerate()
+                .map(|(ti, slot)| {
+                    slot.unwrap_or_else(|| (types[ti].clone(), Err(anyhow!("DNS task failed"))))
+                })
+                .collect();
+            (domain, per_type)
+        })
+        .collect()
 }
 
 /// Look up every domain concurrently (bounded by `concurrency`), returning
@@ -125,10 +220,10 @@ async fn lookup_all(
 
 /// Collect domains from positional args, `--file`, and/or piped stdin, then
 /// de-duplicate while preserving first-seen order.
-fn gather_domains(args: &LookupArgs) -> Result<Vec<String>> {
-    let mut raw: Vec<String> = args.domains.clone();
+fn gather_domains(input: &BatchInput) -> Result<Vec<String>> {
+    let mut raw: Vec<String> = input.domains.clone();
 
-    if let Some(path) = &args.file {
+    if let Some(path) = &input.file {
         let text = if path.as_os_str() == "-" {
             read_stdin().context("reading domains from stdin (--file -)")?
         } else {
